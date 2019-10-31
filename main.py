@@ -9,7 +9,9 @@ import cv2
 import pickle as pkl
 import numpy as np 
 import matplotlib.pyplot as plt
+import multiprocessing
 from multiprocessing import Process
+multiprocessing.set_start_method('spawn', True)
 
 # Reference : https://github.com/Paperspace/DataAugmentationForObjectDetection
 # Reference : https://github.com/mdbloice/Augmentor
@@ -18,28 +20,26 @@ def Augmentation_Operator(input_path, output_path, sample_num):
     # Pipe Init.
     ############################ Fix !!! ############################
     p = Augmentor.Pipeline(input_path, output_path)
-    
+    p.random_color(0.6, 0.2, 0.7)
+
     p.random_erasing(probability=0.3, rectangle_area=0.10000001)
-    p.gaussian_distortion(probability=0.7, grid_width=3, grid_height=3, magnitude=3, corner="bell", method="in")
-    p.random_distortion(probability=0,2, grid_width=2, grid_height=2, magnitude=2)
-    p.histogram_equalisation(probability=0.5)
+    p.gaussian_distortion(probability=0.6, grid_width=3, grid_height=3, magnitude=3, corner="bell", method="in")
+    p.random_distortion(probability=0.2, grid_width=2, grid_height=2, magnitude=2)
+    p.histogram_equalisation(probability=0.1)
     p.random_brightness(probability=0.8, min_factor=0.3, max_factor=0.8)
 
     # Scale Transform
-    p.scale(probability=0.6, scale_factor=1.3)
-    p.scale(probability=0.3, scale_factor=1.5)
-
+    p.scale(probability=0.7, scale_factor=1.5)
+    p.scale(probability=0.1, scale_factor=1.3)
 
     p.sample(sample_num)
     ############################ Fix !!! ############################
 
 # Augmentation
-def augmentation(input_path):
+def augmentation(input_path, sample_number):
     aug_path = input_path + "_aug/" # <== Augmentation 이미지 저장 경로
     output_path = "../" + aug_path
     
-    # Number of image
-    sample_number = 1000000
     Augmentation_Operator(input_path, aug_path, sample_number)
 
     # Merge
@@ -69,7 +69,7 @@ def augmentation(input_path):
         # Get .txt files in the origin piap folder.
         shutil.copy(input_path + "/" + i_num + ".txt", aug_path + str(cnt) + ".txt")
 
-        print(cnt, "/", sample_number)
+        print("\tAugmentation ==> {}/{}".format(cnt, sample_number))
 
         cnt += 1
 
@@ -93,9 +93,7 @@ def trans_bbox(bbox_info, origin_width, origin_height):
 
     return return_list
 
-def rotate_func(image_list, start, end):    
-    save_path = image_folder
-
+def rotate_func(image_list, image_folder, start, end):    
     for im in image_list[start:end]:
         img_name = image_folder + im
         txt_name = image_folder + im.split(".")[0] + ".txt"
@@ -126,11 +124,12 @@ def rotate_func(image_list, start, end):
                 tH, tW = trans_img.shape[:2]
 
                 # init save path & save image, txt files
-                save_img = save_path + "rot_" + im
-                save_txt = save_path + "rot_" + im.split(".")[0] + ".txt"
+                save_img = image_folder + "rot_" + im
+                save_txt = image_folder + "rot_" + im.split(".")[0] + ".txt"
 
                 trans_img = cv2.cvtColor(trans_img, cv2.COLOR_RGB2BGR)
                 cv2.imwrite(save_img, trans_img)
+                print("\tRotated ==> ", save_img)
                 with open(save_txt, "w") as f:
                     for i in trans_bboxes:
                         x1 = int(i[0])
@@ -167,11 +166,48 @@ def rotate_func(image_list, start, end):
             except OSError as err:
                 print("error => ", err)
 
+def make_train_txt():
+    base_path = "/home/cvserver3/project/JH/Dataset/piap/"
+    folder_list = ["LPC/", "LPC_aug/"]
+
+    image_list = []
+    for fol in folder_list:
+        folder_path = base_path + fol
+
+        img_list = [x for x in os.listdir(folder_path) if x.endswith("jpg")]
+
+        for i in img_list:
+            img_path = folder_path + i + "\n"
+            image_list.append(img_path)
+    
+    # Suffle
+    random.shuffle(image_list)
+    
+    total_num = len(image_list)
+    train_num = int(total_num * 0.7)
+
+    trainset = image_list[:train_num]
+    validset = image_list[train_num:]
+
+    print("\tNumber of train image : {}\n\tNumber of valid image : {}".format(len(trainset), len(validset)))
+    
+    # Write
+    with open("191031_SLPCtrain.txt", "w") as f:
+        for t in trainset:
+            f.write(t)
+    
+    with open("191031_SLPCvalid.txt", "w") as f:
+        for v in validset:
+            f.write(v)
+
+
 
 if __name__ == '__main__':
+    '''
     # Augmentor
     origin_folder = "/home/cvserver3/project/JH/Dataset/piap/LPC"
-    augmentation(origin_folder)
+    num_of_image = 1000000
+    augmentation(origin_folder, num_of_image)
 
     # Rotation
     aug_folder = "/home/cvserver3/project/JH/Dataset/piap/LPC_aug/"
@@ -183,9 +219,14 @@ if __name__ == '__main__':
     for i in range(split_num):
         start = int(image_num * i / split_num)
         end = int(image_num * (i + 1) / split_num)
-        proc = Process(target=rotate_func, args=(image_list, start, end,))
+        proc = Process(target=rotate_func, args=(image_list, aug_folder, start, end,))
         proc_list.append(proc)
         proc.start()
 
     for p in proc_list:
         p.join()
+    print("Finished rotate...")
+    '''
+
+    make_train_txt()
+    print("Success make yolo train file")
